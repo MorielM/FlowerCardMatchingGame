@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Botanical Memory Match Game</title>
+    <style>
+        :root {
+            --bg-color: #E8F5E9; /* Soft Sage Green */
+            --header-bg: #E1BEE7; /* Soft Lavender */
+            --card-back: #A5D6A7; /* Medium Green */
+            --card-front-matching: #FFF9C4; /* Matching Light Yellow */
+            --card-front-default: #FCE4EC; /* Dusty Pink */
+            --accent: #43A047; /* Darker Green for text/focus */
+            --text-color: #2E7D32;
+            --focus-ring: 4px solid #FFEB3B;
+            --font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        body {
+            font-family: var(--font-family);
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        /* --- Header & Controls --- */
+        header {
+            width: 100%;
+            background-color: var(--header-bg);
+            padding: 1rem 0;
+            display: flex;
+            justify-content: center;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .control-panel {
+            display: flex;
+            gap: 1.5rem;
+            align-items: center;
+            background: rgba(255, 255, 255, 0.6);
+            padding: 0.5rem 1.5rem;
+            border-radius: 50px;
+        }
+
+        button, select {
+            font-family: inherit;
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            border: 1px solid var(--accent);
+            background-color: white;
+            color: var(--accent);
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        button:hover:not(:disabled), select:hover {
+            background-color: var(--card-front-matching);
+        }
+
+        button:focus, select:focus {
+            outline: var(--focus-ring);
+        }
+
+        #stats-bar {
+            margin-top: 1rem;
+            font-weight: bold;
+            display: flex;
+            gap: 2rem;
+        }
+
+        /* --- Game Board & Grid --- */
+        #game-container {
+            flex: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 2rem;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        #game-board {
+            display: grid;
+            gap: 10px;
+            perspective: 1000px; /* Essential for 3D flip */
+        }
+
+        /* --- Card Styling --- */
+        .card {
+            background-color: transparent;
+            width: 80px; /* Default size, will scale */
+            height: 100px;
+            cursor: pointer;
+            position: relative;
+            transform-style: preserve-3d;
+            transition: transform 0.5s;
+            border-radius: 8px;
+        }
+
+        /* Keyboard Focus State */
+        .card:focus {
+            outline: none;
+            box-shadow: 0 0 0 var(--focus-ring);
+            z-index: 10; /* Bring focused card to front */
+        }
+
+        .card.flipped {
+            transform: rotateY(180deg);
+        }
+
+        .card.matched {
+            cursor: default;
+            visibility: hidden; /* Or keep visible, but fade */
+            transition: visibility 0s 0.5s, opacity 0.5s;
+            opacity: 0;
+        }
+
+        .card-face {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            -webkit-backface-visibility: hidden;
+            backface-visibility: hidden;
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            border: 1px solid rgba(0,0,0,0.05);
+        }
+
+        /* Back Face */
+        .card-back {
+            background-color: var(--card-back);
+            background-image: repeating-conic-gradient(rgba(255,255,255,0.1) 0% 25%, transparent 0% 50%);
+            background-size: 20px 20px;
+        }
+
+        /* Front Face */
+        .card-front {
+            background-color: var(--card-front-default);
+            transform: rotateY(180deg);
+            padding: 5px;
+            box-sizing: border-box;
+        }
+
+        .flower-icon {
+            font-size: 2.5rem;
+            margin-bottom: 5px;
+        }
+
+        .flower-name {
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-weight: bold;
+            opacity: 0.8;
+            max-width: 100%;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+    </style>
+</head>
+<body>
+
+<header>
+    <div class="control-panel">
+        <label for="level-select">Level:</label>
+        <select id="level-select">
+            <option value="1">Lvl 1 (16 Cards)</option>
+            <option value="2">Lvl 2 (32 Cards)</option>
+            <option value="3">Lvl 3 (64 Cards)</option>
+            <option value="4">Lvl 4 (128 Cards)</option>
+            <option value="5">Lvl 5 (256 Cards)</option>
+            <option value="6">Lvl 6 (512 Cards)</option>
+        </select>
+        <button id="restart-btn">Restart Game (R)</button>
+        <button id="audio-toggle">Mute Chimes</button>
+    </div>
+</header>
+
+<div id="stats-bar">
+    <span>Moves: <span id="move-count">0</span></span>
+    <span>Matches: <span id="match-count">0</span> / <span id="total-matches">0</span></span>
+</div>
+
+<div id="game-container">
+    <div id="game-board"></div>
+</div>
+
+<script>
+    // --- Data & Definitions ---
+    const flowersData = [
+        { name: 'Lavender', icon: '🌿' }, { name: 'Sakura', icon: '🌸' }, { name: 'Rose', icon: '🌹' },
+        { name: 'Sunflower', icon: '🌻' }, { name: 'Lotus', icon: '🪷' }, { name: 'Orchid', icon: '🌺' },
+        { name: 'Daisy', icon: '🌼' }, { name: 'Tulip', icon: '🌷' }, { name: 'Dahlia', icon: '🏵️' },
+        { name: 'Magnolia', icon: '💮' }, { name: 'Iris', icon: '🪻' }, { name: 'Peony', icon: '☘️' },
+        { name: 'Hibiscus', icon: '🍁' }, { name: 'Jasmine', icon: '🍃' }, { name: 'Poppy', icon: '🥀' }
+    ];
+
+    const levelConfigs = {
+        1: { cards: 16, grid: [4, 4], cardSize: 100 }, // Size in px
+        2: { cards: 32, grid: [4, 8], cardSize: 85 },
+        3: { cards: 64, grid: [8, 8], cardSize: 70 },
+        4: { cards: 128, grid: [8, 16], cardSize: 55 },
+        5: { cards: 256, grid: [16, 16], cardSize: 40 },
+        6: { cards: 512, grid: [16, 32], cardSize: 30 }
+    };
+
+    // --- State Variables ---
+    let currentLevel = 1;
+    let cardDeck = [];
+    let flippedCards = [];
+    let matchedCount = 0;
+    let moves = 0;
+    let isProcessing = false;
+    let focusedIndex = 0; // for keyboard nav
+
+    // Audio Setup (Web Audio API)
+    let audioContext;
+    let isMuted = false;
+
+    // --- DOM Elements ---
+    const board = document.getElementById('game-board');
+    const levelSelect = document.getElementById('level-select');
+    const restartBtn = document.getElementById('restart-btn');
+    const audioToggleBtn = document.getElementById('audio-toggle');
+    const moveCountDisplay = document.getElementById('move-count');
+    const matchCountDisplay = document.getElementById('match-count');
+    const totalMatchesDisplay = document.getElementById('total-matches');
+
+    // --- Game Logic ---
+
+    function initGame(level) {
+        currentLevel = level;
+        const config = levelConfigs[level];
+        const numPairs = config.cards / 2;
+
+        // 1. Setup Stats
+        moves = 0;
+        matchedCount = 0;
+        flippedCards = [];
+        focusedIndex = 0;
+        isProcessing = false;
+        updateStats();
+        totalMatchesDisplay.textContent = numPairs;
+
+        // 2. Prepare Deck
+        // Generate pairs from available flower data (repeating if necessary for high levels)
+        let flowersForLevel = [];
+        for (let i = 0; i < numPairs; i++) {
+            const flower = flowersData[i % flowersData.length];
+            flowersForLevel.push({ ...flower, id: i * 2 }, { ...flower, id: i * 2 + 1 });
+        }
+        cardDeck = shuffle(flowersForLevel);
+
+        // 3. Render Board
+        renderBoard(config);
+    }
+
+    function renderBoard(config) {
+        board.innerHTML = ''; // Clear previous level
+        const [rows, cols] = config.grid;
+
+        // Dynamically set grid dimensions and card size
+        board.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+        const cardSizeCSS = `${config.cardSize}px`;
+
+        cardDeck.forEach((cardData, index) => {
+            const cardEl = document.createElement('div');
+            cardEl.classList.add('card');
+            cardEl.dataset.index = index;
+            cardEl.dataset.flowerName = cardData.name;
+            cardEl.setAttribute('tabindex', '0'); // Make focusable for keyboard
+            cardEl.setAttribute('aria-label', `Card ${index + 1}`);
+
+            cardEl.style.width = cardSizeCSS;
+            cardEl.style.height = `${Math.round(config.cardSize * 1.25)}px`; // Maintain aspect ratio
+
+            cardEl.innerHTML = `
+                <div class="card-face card-back"></div>
+                <div class="card-face card-front">
+                    <div class="flower-icon">${cardData.icon}</div>
+                    <div class="flower-name">${cardData.name}</div>
+                </div>
+            `;
+
+            // Mouse Interaction
+            cardEl.addEventListener('click', () => handleCardFlip(cardEl));
+
+            board.appendChild(cardEl);
+        });
+    }
+
+    function handleCardFlip(cardEl) {
+        // Prevent action if processing, card is already flipped, or matched
+        if (isProcessing || cardEl.classList.contains('flipped') || cardEl.classList.contains('matched')) return;
+
+        playChime('flip');
+        cardEl.classList.add('flipped');
+        flippedCards.push(cardEl);
+
+        if (flippedCards.length === 2) {
+            moves++;
+            updateStats();
+            checkForMatch();
+        }
+    }
+
+    function checkForMatch() {
+        isProcessing = true;
+        const [card1, card2] = flippedCards;
+        const isMatch = card1.dataset.flowerName === card2.dataset.flowerName;
+
+        if (isMatch) {
+            playChime('match');
+            // Allow flip animation to complete before hiding
+            setTimeout(() => {
+                card1.classList.add('matched');
+                card2.classList.add('matched');
+                matchedCount++;
+                updateStats();
+                flippedCards = [];
+                isProcessing = false;
+                checkWinCondition();
+            }, 600);
+        } else {
+            // No match, flip back after a delay
+            setTimeout(() => {
+                playChime('mismatch');
+                card1.classList.remove('flipped');
+                card2.classList.remove('flipped');
+                flippedCards = [];
+                isProcessing = false;
+            }, 1200);
+        }
+    }
+
+    function checkWinCondition() {
+        const totalPairs = levelConfigs[currentLevel].cards / 2;
+        if (matchedCount === totalPairs) {
+            playChime('win');
+            setTimeout(() => {
+                alert(`Peaceful Victory! You completed Level ${currentLevel} in ${moves} moves.`);
+            }, 500);
+        }
+    }
+
+    // --- Keyboard Navigation ---
+
+    document.addEventListener('keydown', (e) => {
+        const config = levelConfigs[currentLevel];
+        const numCols = config.grid[1];
+        const totalCards = config.cards;
+        let cards = document.querySelectorAll('.card');
+
+        // Allow 'R' to restart anytime
+        if (e.key.toLowerCase() === 'r') {
+            initGame(currentLevel);
+            return;
+        }
+
+        if (!document.activeElement.classList.contains('card')) {
+            if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space', 'Enter'].includes(e.key)) {
+                cards[0].focus();
+                focusedIndex = 0;
+            }
+            return; // Don't intercept global keys
+        }
+
+        let newIndex = focusedIndex;
+
+        switch (e.key) {
+            case 'ArrowUp':
+            case 'w':
+                newIndex = focusedIndex - numCols;
+                break;
+            case 'ArrowDown':
+            case 's':
+                newIndex = focusedIndex + numCols;
+                break;
+            case 'ArrowLeft':
+            case 'a':
+                newIndex = focusedIndex - 1;
+                break;
+            case 'ArrowRight':
+            case 'd':
+                newIndex = focusedIndex + 1;
+                break;
+            case 'Enter':
+            case ' ': // Space
+                e.preventDefault(); // Prevent page scroll
+                handleCardFlip(cards[focusedIndex]);
+                return;
+            default: return; // ignore other keys
+        }
+
+        // Keep index within bounds
+        if (newIndex >= 0 && newIndex < totalCards) {
+            e.preventDefault();
+            focusedIndex = newIndex;
+            cards[focusedIndex].focus();
+        }
+    });
+
+
+    // --- Utilities ---
+
+    function shuffle(array) {
+        let currentIndex = array.length;
+        while (currentIndex != 0) {
+            let randomIndex = Math.floor(Math.random() * currentIndex);
+            currentIndex--;
+            [array[currentIndex], array[randomIndex]] = [array[randomIndex], array[currentIndex]];
+        }
+        return array;
+    }
+
+    function updateStats() {
+        moveCountDisplay.textContent = moves;
+        matchCountDisplay.textContent = matchedCount;
+    }
+
+    // --- Audio Synthesis ---
+
+    function initAudio() {
+        if (!audioContext) {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        }
+    }
+
+    function playChime(type) {
+        if (isMuted) return;
+        initAudio();
+
+        const osc = audioContext.createOscillator();
+        const gainNode = audioContext.createGain();
+
+        osc.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+
+        const now = audioContext.currentTime;
+        let fundamental = 330; // E4
+
+        // Setup tones based on action
+        switch (type) {
+            case 'flip':
+                // Simple sine, quickly decaying
+                osc.type = 'sine';
+                fundamental = 440; // A4
+                gainNode.gain.setValueAtTime(0.05, now);
+                gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+                osc.start(now);
+                osc.stop(now + 0.3);
+                break;
+
+            case 'match':
+                // Two chimes (C4, G4), soft triangle
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime( fundamental, now);
+                gainNode.gain.setValueAtTime(0.03, now);
+                gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
+                osc.start(now);
+                osc.stop(now + 0.6);
+
+                const osc2 = audioContext.createOscillator();
+                osc2.type = 'triangle';
+                osc2.frequency.setValueAtTime(fundamental * 1.5, now + 0.1); // G4
+                const gain2 = audioContext.createGain();
+                gain2.gain.setValueAtTime(0.02, now + 0.1);
+                gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.7);
+                osc2.connect(gain2);
+                gain2.connect(audioContext.destination);
+                osc2.start(now + 0.1);
+                osc2.stop(now + 0.7);
+                break;
+
+            case 'mismatch':
+                // Low, soft sine wave
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(110, now); // A2
+                gainNode.gain.setValueAtTime(0.1, now);
+                gainNode.gain.linearRampToValueAtTime(0.01, now + 0.5);
+                osc.start(now);
+                osc.stop(now + 0.5);
+                break;
+
+            case 'win':
+                // Soft pentatonic sweep (C4, E4, G4, A4, C5)
+                const winTones = [261.63, 329.63, 392.00, 440.00, 523.25];
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(winTones[0], now);
+                gainNode.gain.setValueAtTime(0.02, now);
+
+                winTones.forEach((f, i) => {
+                    osc.frequency.setValueAtTime(f, now + (i * 0.15));
+                });
+
+                gainNode.gain.exponentialRampToValueAtTime(0.001, now + 1.2);
+                osc.start(now);
+                osc.stop(now + 1.5);
+                break;
+        }
+    }
+
+    // --- Control Event Listeners ---
+
+    levelSelect.addEventListener('change', (e) => {
+        initGame(parseInt(e.target.value));
+    });
+
+    restartBtn.addEventListener('click', () => {
+        initGame(currentLevel);
+    });
+
+    audioToggleBtn.addEventListener('click', () => {
+        initAudio(); // required on user interaction
+        isMuted = !isMuted;
+        audioToggleBtn.textContent = isMuted ? 'Play Chimes' : 'Mute Chimes';
+    });
+
+    // Start initial game
+    initGame(1);
+
+</script>
+</body>
+</html>
